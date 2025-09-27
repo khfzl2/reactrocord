@@ -1,203 +1,185 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const session = require('express-session');
-const mongoose = require('mongoose');
-const path = require('path');
+const moment = require('moment');
+const AuthService = require('./services/AuthService').default;
+const AdminService = require('./services/AdminService').default;
+const NitroService = require('./services/NitroService').default;
 
-// Initialize Express app
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(session({
-  secret: 'reactrocord-secret',
-  resave: false,
-  saveUninitialized: false
-}));
+app.use(express.static('public'));
 
-// MongoDB connection
-mongoose.connect('mongodb://localhost/reactrocord', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-});
-
-// User Schema
-const userSchema = new mongoose.Schema({
-  username: { type: String, unique: true },
-  password: String,
-  role: { type: String, enum: ['owner', 'admin', 'user'], default: 'user' },
-  nitroType: { type: String, enum: ['none', 'BasicoNitro', 'AdvancoNitro'], default: 'none' },
-  reactroCoins: { type: Number, default: 0 },
-  boosts: { type: Number, default: 0 },
-  nitroExpiry: Date,
-  servers: [String]
-});
-
-const User = mongoose.model('User', userSchema);
-
-// Server Schema
-const serverSchema = new mongoose.Schema({
-  name: String,
-  ownerId: String,
-  members: [String],
-  boosts: { type: Number, default: 0 },
-  bannedUsers: [String],
-  warnedUsers: Map,
-  timeoutUsers: Map
-});
-
-const Server = mongoose.model('Server', serverSchema);
+// Initialize services
+const authService = new AuthService();
+const adminService = new AdminService();
+const nitroService = new NitroService();
 
 // Initialize owner account
-async function initializeOwner() {
-  try {
-    const ownerExists = await User.findOne({ username: 'Reactro_Editz' });
-    if (!ownerExists) {
-      const hashedPassword = await bcrypt.hash('gessey1125191514', 10);
-      await User.create({
-        username: 'Reactro_Editz',
-        password: hashedPassword,
-        role: 'owner',
-        nitroType: 'AdvancoNitro',
-        reactroCoins: 1000,
-        boosts: 10
-      });
-      console.log('Owner account created successfully');
-    }
-  } catch (error) {
-    console.error('Error creating owner account:', error);
-  }
-}
+authService.initializeOwnerAccount();
 
-// Authentication middleware
-const authMiddleware = async (req, res, next) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  try {
-    const user = await User.findById(req.session.userId);
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
-    }
-    req.user = user;
-    next();
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
-  }
-};
+// Main HTML template
+app.get('/', (req, res) => {
+    const html = `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Reactrocord Dashboard</title>
+            <style>
+                body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    background: #36393f;
+                    color: #fff;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                .header {
+                    background: #202225;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                }
+                .card {
+                    background: #2f3136;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                }
+                .repo-list {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                    gap: 20px;
+                }
+                .repo-card {
+                    background: #40444b;
+                    padding: 15px;
+                    border-radius: 5px;
+                }
+                .button {
+                    background: #5865f2;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                .button:hover {
+                    background: #4752c4;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Reactrocord Dashboard</h1>
+                    <div id="datetime"></div>
+                </div>
+                
+                <div class="card">
+                    <h2>User Information</h2>
+                    <p>Current User: khfzl2</p>
+                    <p>Role: Owner</p>
+                    <p>Nitro Status: ReactroNitro Active</p>
+                    <p>Reactro-Coins: <span id="coins">1000</span></p>
+                </div>
 
-// Admin middleware
-const adminMiddleware = (req, res, next) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'owner') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-};
+                <div class="card">
+                    <h2>Your Repositories</h2>
+                    <div class="repo-list">
+                        <div class="repo-card">
+                            <h3>khfzl2/bot</h3>
+                            <a href="https://github.com/khfzl2/bot" class="button">View Repository</a>
+                        </div>
+                        <div class="repo-card">
+                            <h3>khfzl2/reactrocord</h3>
+                            <a href="https://github.com/khfzl2/reactrocord" class="button">View Repository</a>
+                        </div>
+                        <div class="repo-card">
+                            <h3>khfzl2/botagain</h3>
+                            <a href="https://github.com/khfzl2/botagain" class="button">View Repository</a>
+                        </div>
+                    </div>
+                </div>
 
-// Routes
-app.post('/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const user = await User.findOne({ username });
-    
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+                <div class="card">
+                    <h2>Admin Controls</h2>
+                    <button class="button" onclick="showServers()">View All Servers</button>
+                    <button class="button" onclick="showUsers()">Manage Users</button>
+                </div>
+            </div>
 
-    req.session.userId = user._id;
-    res.json({ success: true, user: { username: user.username, role: user.role } });
-  } catch (error) {
-    res.status(500).json({ error: 'Login failed' });
-  }
+            <script>
+                // Update datetime
+                function updateDateTime() {
+                    const now = new Date();
+                    const formatted = now.toISOString().replace('T', ' ').substr(0, 19);
+                    document.getElementById('datetime').textContent = formatted;
+                }
+                
+                setInterval(updateDateTime, 1000);
+                updateDateTime();
+
+                // Admin functions
+                function showServers() {
+                    alert('Feature coming soon: View all Reactrocord servers');
+                }
+
+                function showUsers() {
+                    alert('Feature coming soon: Manage users globally');
+                }
+            </script>
+        </body>
+        </html>
+    `;
+    res.send(html);
 });
 
-// Admin routes
-app.post('/admin/create', authMiddleware, async (req, res) => {
-  if (req.user.role !== 'owner') {
-    return res.status(403).json({ error: 'Owner access required' });
-  }
-
-  try {
-    const { username, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    
-    const newAdmin = await User.create({
-      username,
-      password: hashedPassword,
-      role: 'admin',
-      nitroType: 'BasicoNitro',
-      reactroCoins: 500,
-      boosts: 5
-    });
-
-    res.json({ success: true, admin: { username: newAdmin.username, role: newAdmin.role } });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create admin' });
-  }
+// API Endpoints
+app.post('/api/admin/ban', async (req, res) => {
+    const { adminId, userId } = req.body;
+    const result = await adminService.banUser(adminId, userId);
+    res.json({ success: result });
 });
 
-// Moderation routes
-app.post('/mod/ban/:userId', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const servers = await Server.find();
-    await Promise.all(servers.map(server => {
-      if (!server.bannedUsers.includes(req.params.userId)) {
-        server.bannedUsers.push(req.params.userId);
-        return server.save();
-      }
-    }));
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to ban user' });
-  }
+app.post('/api/admin/warn', async (req, res) => {
+    const { adminId, userId } = req.body;
+    const result = await adminService.warnUser(adminId, userId);
+    res.json({ success: result });
 });
 
-// Nitro routes
-app.post('/nitro/redeem', authMiddleware, async (req, res) => {
-  try {
-    const { type } = req.body;
-    const cost = type === 'BasicoNitro' ? 500 : 1000;
-    
-    if (req.user.reactroCoins < cost) {
-      return res.status(400).json({ error: 'Insufficient Reactro-Coins' });
-    }
-
-    req.user.reactroCoins -= cost;
-    req.user.nitroType = type;
-    req.user.nitroExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    req.user.boosts += type === 'BasicoNitro' ? 1 : 2;
-    
-    await req.user.save();
-    res.json({ success: true, user: req.user });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to redeem Nitro' });
-  }
+app.post('/api/admin/timeout', async (req, res) => {
+    const { adminId, userId, duration } = req.body;
+    const result = await adminService.timeoutUser(adminId, userId, duration);
+    res.json({ success: result });
 });
 
-// Server listing route for owner
-app.get('/servers', authMiddleware, async (req, res) => {
-  if (req.user.role !== 'owner') {
-    return res.status(403).json({ error: 'Owner access required' });
-  }
-
-  try {
-    const servers = await Server.find();
-    res.json({ success: true, servers });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch servers' });
-  }
+app.post('/api/nitro/redeem', async (req, res) => {
+    const { userId, code } = req.body;
+    const result = await nitroService.redeemGiftCode(userId, code);
+    res.json({ success: result });
 });
 
-// Initialize and start server
-async function startServer() {
-  await initializeOwner();
-  app.listen(port, () => {
-    console.log(`Reactrocord server running on port ${port}`);
-  });
-}
+app.post('/api/nitro/purchase', async (req, res) => {
+    const { userId, type } = req.body;
+    const result = await nitroService.redeemNitro(userId, type);
+    res.json({ success: result });
+});
 
-startServer().catch(console.error);
+// Error handling middleware
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+});
+
+app.listen(port, () => {
+    console.log(`Reactrocord is running on port ${port}`);
+});
 
 module.exports = app;
